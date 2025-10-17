@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚰 Monitor Tanque Agua - Tiempo Real</title>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #333;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #2c3e50;
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        .status {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .status.online { background: #d4edda; color: #155724; }
+        .status.offline { background: #f8d7da; color: #721c24; }
+        
+        /* Tanque */
+        .tank-container {
+            position: relative;
+            margin: 30px 0;
+        }
+        .tank {
+            width: 100%;
+            height: 250px;
+            border: 4px solid #34495e;
+            border-radius: 15px;
+            position: relative;
+            overflow: hidden;
+            background: #ecf0f1;
+        }
+        .water {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            transition: height 0.8s ease;
+            background: linear-gradient(to top, #3498db, #5dade2);
+        }
+        .water-label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            font-size: 14px;
+        }
+        .tank-level {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 18px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        /* Info Cards */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .info-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            border-left: 4px solid;
+        }
+        .info-card.nivel { border-color: #3498db; }
+        .info-card.bomba { border-color: #27ae60; }
+        .info-card.modo { border-color: #f39c12; }
+        .info-card.distancia { border-color: #e74c3c; }
+        .info-value {
+            font-size: 24px;
+            font-weight: bold;
+            display: block;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .bomba-on { color: #27ae60; }
+        .bomba-off { color: #e74c3c; }
+        
+        /* Botones */
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 25px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        .btn-auto { background: #3498db; color: white; }
+        .btn-llenar { background: #27ae60; color: white; }
+        .btn-vaciar { background: #e74c3c; color: white; }
+        .btn-apagar { background: #95a5a6; color: white; }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        /* Responsive */
+        @media (max-width: 480px) {
+            .info-grid { grid-template-columns: 1fr; }
+            .controls { flex-direction: column; }
+        }
+        
+        .last-update {
+            text-align: center;
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚰 Tanque Agua</h1>
+            <div class="status online" id="status">Conectado</div>
+        </div>
+        
+        <div class="tank-container">
+            <div class="tank" id="tank">
+                <div class="water" id="water"></div>
+                <div class="water-label">NIVEL AGUA</div>
+            </div>
+            <div class="tank-level" id="tankLevel">0%</div>
+        </div>
+        
+        <div class="info-grid">
+            <div class="info-card nivel">
+                <span class="info-value" id="porcentaje">0</span>
+                <span class="info-label">Nivel</span>
+            </div>
+            <div class="info-card bomba">
+                <span class="info-value" id="estadoBomba">APAGADO</span>
+                <span class="info-label">Bomba</span>
+            </div>
+            <div class="info-card modo">
+                <span class="info-value" id="modo">AUTO</span>
+                <span class="info-label">Modo</span>
+            </div>
+            <div class="info-card distancia">
+                <span class="info-value" id="distancia">0.0</span>
+                <span class="info-label">Distancia</span>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button class="btn-auto" onclick="setModo('AUTO')">🤖 AUTO</button>
+            <button class="btn-llenar" onclick="setModo('LLENAR')">⬆️ LLENAR</button>
+            <button class="btn-vaciar" onclick="setModo('VACIAR')">⬇️ VACIAR</button>
+            <button class="btn-apagar" onclick="setCircuito(false)">⏹️ APAGAR</button>
+        </div>
+        
+        <div class="last-update" id="lastUpdate">Última actualización: --</div>
+    </div>
+
+    <script>
+        // ==================== FIREBASE CONFIG ====================
+        const firebaseConfig = {
+            apiKey: "AIzaSyD0b0Q2c5X8dR1g6mK0pJ7nL4qU3vT9wY2",
+            authDomain: "esp32firebasetest-8cf49.firebaseapp.com",
+            databaseURL: "https://esp32firebasetest-8cf49-default-rtdb.firebaseio.com",
+            projectId: "esp32firebasetest-8cf49",
+            storageBucket: "esp32firebasetest-8cf49.appspot.com",
+            messagingSenderId: "123456789",
+            appId: "1:123456789:web:abcdef123456"
+        };
+
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+        const ref = db.ref('NivelAgua');
+
+        let isOnline = true;
+
+        // ==================== ESCUCHAR DATOS EN TIEMPO REAL ====================
+        ref.on('value', (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                updateDisplay(data);
+                updateStatus(true);
+            } else {
+                updateStatus(false);
+            }
+        });
+
+        // ==================== ACTUALIZAR INTERFAZ ====================
+        function updateDisplay(data) {
+            // Nivel del tanque
+            const porcentaje = data.porcentaje || 0;
+            document.getElementById('porcentaje').textContent = Math.round(porcentaje) + '%';
+            document.getElementById('tankLevel').textContent = Math.round(porcentaje) + '%';
+            document.getElementById('water').style.height = porcentaje + '%';
+            
+            // Bomba
+            const estadoBomba = data.estadoBomba || 'APAGADO';
+            const bombaEl = document.getElementById('estadoBomba');
+            bombaEl.textContent = estadoBomba;
+            bombaEl.className = 'info-value ' + (estadoBomba === 'ON' ? 'bomba-on' : 'bomba-off');
+            
+            // Modo
+            document.getElementById('modo').textContent = data.modo || 'AUTO';
+            
+            // Distancia
+            document.getElementById('distancia').textContent = (data.distancia || 0).toFixed(1) + 'cm';
+            
+            // Última actualización
+            document.getElementById('lastUpdate').textContent = 
+                'Actualizado: ' + new Date().toLocaleTimeString();
+        }
+
+        // ==================== CONTROL DE ESTADO CONEXIÓN ====================
+        function updateStatus(online) {
+            isOnline = online;
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = online ? '🟢 Conectado' : '🔴 Desconectado';
+            statusEl.className = 'status ' + (online ? 'online' : 'offline');
+        }
+
+        // ==================== BOTONES DE CONTROL ====================
+        async function setModo(modo) {
+            if (!isOnline) {
+                alert('❌ Dispositivo desconectado');
+                return;
+            }
+            
+            try {
+                await ref.update({ modo: modo });
+                console.log('✅ Modo cambiado a:', modo);
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        async function setCircuito(encendido) {
+            if (!isOnline) {
+                alert('❌ Dispositivo desconectado');
+                return;
+            }
+            
+            try {
+                await ref.update({ circuitoEncendido: encendido });
+                console.log('✅ Circuito:', encendido ? 'ENCENDIDO' : 'APAGADO');
+            } catch (error) {
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        // ==================== DETECTAR DESCONEXIÓN ====================
+        ref.onDisconnect().set(null);
+        
+        // Manejar errores de conexión
+        window.addEventListener('online', () => updateStatus(true));
+        window.addEventListener('offline', () => updateStatus(false));
+    </script>
+</body>
+</html>
